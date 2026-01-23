@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Optional, List
 from contextlib import contextmanager
 
-from fetcher import fetch_all_cities, CITIES, DB_PATH, init_database, classify_store_type
+from fetcher import fetch_all_cities, CITIES, DB_PATH, init_database, ensure_database, classify_store_type
 
 # Initialize FastAPI
 app = FastAPI(
@@ -715,12 +715,41 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize on startup."""
-    # Only init if database doesn't exist
+    """Initialize on startup and auto-fetch if database is empty."""
+    print("=" * 50)
+    print("Dashboard de Precios de Huevo - Iniciando...")
+    print("=" * 50)
+
+    # Ensure database exists
     if not os.path.exists(DB_PATH):
+        print("Base de datos no encontrada, inicializando...")
         init_database()
-    print("Dashboard de Precios de Huevo iniciado!")
-    print(f"Base de datos: {DB_PATH}")
+
+    # Check if we have data
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM egg_prices")
+            count = cursor.fetchone()[0]
+            print(f"Registros en base de datos: {count}")
+
+            if count < 100:
+                print("\nPocos datos detectados. Iniciando carga automatica...")
+                # Fetch in background thread so server starts immediately
+                thread = threading.Thread(target=fetch_all_cities, daemon=True)
+                thread.start()
+                print("Carga de datos iniciada en segundo plano...")
+            else:
+                print(f"Base de datos lista con {count} registros")
+    except Exception as e:
+        print(f"Error verificando base de datos: {e}")
+        print("Inicializando base de datos nueva...")
+        init_database()
+        thread = threading.Thread(target=fetch_all_cities, daemon=True)
+        thread.start()
+
+    print(f"\nServidor listo en http://0.0.0.0:8000")
+    print("=" * 50)
 
 
 if __name__ == "__main__":

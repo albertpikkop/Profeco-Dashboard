@@ -297,116 +297,164 @@ def parse_product_description(producto):
     return result
 
 
-def fetch_city_eggs(city_code):
-    """Fetch egg prices for a single city."""
+def fetch_city_eggs(city_code, max_retries=3):
+    """Fetch egg prices for a single city with retry logic."""
     city_info = CITIES.get(city_code, {"name": city_code, "region": "Unknown"})
 
-    try:
-        params = {"clave_ciudad": city_code, "busqueda": "huevo"}
-        response = requests.get(PROFECO_API, params=params, timeout=30)
-        response.raise_for_status()
-        data = response.json()
+    for attempt in range(max_retries):
+        try:
+            params = {"clave_ciudad": city_code, "busqueda": "huevo"}
+            response = requests.get(
+                PROFECO_API,
+                params=params,
+                timeout=60,  # Longer timeout
+                headers={'User-Agent': 'Mozilla/5.0 (compatible; EggDashboard/1.0)'}
+            )
+            response.raise_for_status()
+            data = response.json()
 
-        if not data.get("success"):
-            print(f"  API returned success=false for {city_info['name']}")
-            return {"city": city_info["name"], "fetched": 0, "new": 0}
+            if not data.get("success"):
+                print(f"  API returned success=false for {city_info['name']}")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                    continue
+                return {"city": city_info["name"], "fetched": 0, "new": 0}
 
-        products = data.get("data", {}).get("productos", [])
-        new_count = 0
+            products = data.get("data", {}).get("productos", [])
 
-        with get_db() as conn:
-            cursor = conn.cursor()
+            if len(products) < 10 and attempt < max_retries - 1:
+                # Too few results, might be API issue - retry
+                print(f"  Only {len(products)} results, retrying...")
+                time.sleep(2 ** attempt)
+                continue
 
-            for p in products:
-                try:
-                    producto = p.get("producto", "")
-                    precio = p.get("precio")
+            new_count = 0
 
-                    # Skip if no valid price
-                    if not precio or precio <= 0:
+            with get_db() as conn:
+                cursor = conn.cursor()
+
+                for p in products:
+                    try:
+                        producto = p.get("producto", "")
+                        precio = p.get("precio")
+
+                        # Skip if no valid price
+                        if not precio or precio <= 0:
+                            continue
+
+                        # Parse product description
+                        parsed = parse_product_description(producto)
+
+                        # Calculate price per piece
+                        precio_por_pieza = calculate_price_per_egg(precio, parsed['cantidad_piezas'])
+
+                        # Classify store
+                        cadena = p.get("cadena_comercial", "")
+                        tipo_tienda = classify_store_type(cadena)
+
+                        cursor.execute('''
+                            INSERT OR IGNORE INTO egg_prices
+                            (producto_original, presentacion_profeco, marca, cantidad_piezas,
+                             tipo_huevo, tamaño, precio, precio_por_pieza,
+                             ciudad_code, ciudad, region, municipio,
+                             cadena_comercial, tipo_tienda, establecimiento, direccion,
+                             fecha_observacion)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            producto,
+                            p.get("tipo_producto"),
+                            parsed['marca'],
+                            parsed['cantidad_piezas'],
+                            parsed['tipo_huevo'],
+                            parsed['tamaño'],
+                            precio,
+                            precio_por_pieza,
+                            city_code,
+                            city_info["name"],
+                            city_info["region"],
+                            p.get("municipio"),
+                            cadena,
+                            tipo_tienda,
+                            p.get("establecimiento"),
+                            p.get("direccion"),
+                            p.get("fecha_observacion")
+                        ))
+
+                        if cursor.rowcount > 0:
+                            new_count += 1
+
+                    except Exception as e:
+                        print(f"    Error processing record: {e}")
                         continue
 
-                    # Parse product description
-                    parsed = parse_product_description(producto)
+                conn.commit()
 
-                    # Calculate price per piece
-                    precio_por_pieza = calculate_price_per_egg(precio, parsed['cantidad_piezas'])
+            return {"city": city_info["name"], "fetched": len(products), "new": new_count}
 
-                    # Classify store
-                    cadena = p.get("cadena_comercial", "")
-                    tipo_tienda = classify_store_type(cadena)
+        except requests.exceptions.Timeout:
+            print(f"  Timeout for {city_info['name']}, attempt {attempt + 1}/{max_retries}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+            continue
+        except requests.exceptions.RequestException as e:
+            print(f"  Network error for {city_info['name']}: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            return {"city": city_info["name"], "fetched": 0, "new": 0, "error": str(e)}
+        except Exception as e:
+            print(f"  Error for {city_info['name']}: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            return {"city": city_info["name"], "fetched": 0, "new": 0, "error": str(e)}
 
-                    cursor.execute('''
-                        INSERT OR IGNORE INTO egg_prices
-                        (producto_original, presentacion_profeco, marca, cantidad_piezas,
-                         tipo_huevo, tamaño, precio, precio_por_pieza,
-                         ciudad_code, ciudad, region, municipio,
-                         cadena_comercial, tipo_tienda, establecimiento, direccion,
-                         fecha_observacion)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        producto,
-                        p.get("tipo_producto"),
-                        parsed['marca'],
-                        parsed['cantidad_piezas'],
-                        parsed['tipo_huevo'],
-                        parsed['tamaño'],
-                        precio,
-                        precio_por_pieza,
-                        city_code,
-                        city_info["name"],
-                        city_info["region"],
-                        p.get("municipio"),
-                        cadena,
-                        tipo_tienda,
-                        p.get("establecimiento"),
-                        p.get("direccion"),
-                        p.get("fecha_observacion")
-                    ))
-
-                    if cursor.rowcount > 0:
-                        new_count += 1
-
-                except Exception as e:
-                    print(f"    Error processing record: {e}")
-                    continue
-
-            conn.commit()
-
-        return {"city": city_info["name"], "fetched": len(products), "new": new_count}
-
-    except requests.exceptions.RequestException as e:
-        print(f"  Network error for {city_info['name']}: {e}")
-        return {"city": city_info["name"], "fetched": 0, "new": 0, "error": str(e)}
-    except Exception as e:
-        print(f"  Error for {city_info['name']}: {e}")
-        return {"city": city_info["name"], "fetched": 0, "new": 0, "error": str(e)}
+    return {"city": city_info["name"], "fetched": 0, "new": 0, "error": "Max retries exceeded"}
 
 
-def fetch_all_cities():
+def ensure_database():
+    """Ensure database exists with proper schema (don't wipe existing data)."""
+    import os
+    os.makedirs("data", exist_ok=True)
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Check if table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='egg_prices'")
+        if not cursor.fetchone():
+            print("Database not found, initializing...")
+            init_database()
+        else:
+            print(f"Database exists, preserving data")
+
+
+def fetch_all_cities(force_reinit=False):
     """Fetch egg prices from all target cities."""
     print("\n" + "=" * 60)
     print("PROFECO Egg Price Fetcher - Starting data collection")
     print("=" * 60)
     print(f"Fetching from {len(CITIES)} cities...\n")
 
-    # Initialize database
-    init_database()
+    # Initialize database only if needed
+    if force_reinit:
+        init_database()
+    else:
+        ensure_database()
 
     results = []
     total_fetched = 0
     total_new = 0
 
     for city_code in CITIES:
-        print(f"Fetching: {CITIES[city_code]['name']}...", end=" ")
+        print(f"Fetching: {CITIES[city_code]['name']}...", end=" ", flush=True)
         result = fetch_city_eggs(city_code)
         results.append(result)
         total_fetched += result.get("fetched", 0)
         total_new += result.get("new", 0)
         print(f"Got {result.get('fetched', 0)} records, {result.get('new', 0)} new")
 
-        # Rate limiting
-        time.sleep(0.5)
+        # Rate limiting between cities
+        time.sleep(1)
 
     print("\n" + "=" * 60)
     print(f"COMPLETE: {total_fetched} total records, {total_new} new records")
