@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<!-- v3.0 - Spanish Dashboard with Gpounj Footer - 2026-01-22 -->
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Precios de Huevo | PROFECO Mexico</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        egg: { 50: '#fefce8', 100: '#fef9c3', 200: '#fef08a', 500: '#eab308', 600: '#ca8a04', 700: '#a16207' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        .card { background: white; border-radius: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border: 1px solid #f1f5f9; }
+        .card-header { padding: 20px 24px; border-bottom: 1px solid #f1f5f9; }
+        .card-body { padding: 24px; }
+        .tab-btn { padding: 12px 20px; font-weight: 500; color: #64748b; border-bottom: 3px solid transparent; transition: all 0.2s; white-space: nowrap; }
+        .tab-btn:hover { color: #334155; background: #f8fafc; }
+        .tab-btn.active { color: #ca8a04; border-bottom-color: #ca8a04; background: #fefce8; }
+        .kpi-card { text-align: center; padding: 24px 16px; border-radius: 16px; }
+        .kpi-value { font-size: 32px; font-weight: 800; line-height: 1; }
+        .kpi-label { font-size: 13px; color: #64748b; margin-top: 8px; font-weight: 500; }
+        .rank-row { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #f1f5f9; transition: all 0.15s; }
+        .rank-row:hover { background: #fefce8; }
+        .rank-row:last-child { border-bottom: none; }
+        .rank-row.gold { background: linear-gradient(90deg, #fef9c3 0%, white 50%); border-left: 4px solid #eab308; }
+        .rank-row.silver { background: linear-gradient(90deg, #f1f5f9 0%, white 50%); border-left: 4px solid #94a3b8; }
+        .rank-row.bronze { background: linear-gradient(90deg, #fed7aa 0%, white 50%); border-left: 4px solid #f97316; }
+        .badge { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+        .badge-gold { background: #fef9c3; color: #a16207; }
+        .badge-red { background: #fee2e2; color: #991b1b; }
+        .badge-green { background: #dcfce7; color: #166534; }
+        .badge-blue { background: #dbeafe; color: #1e40af; }
+        .medal { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+        .medal-gold { background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); color: white; }
+        .medal-silver { background: linear-gradient(135deg, #cbd5e1 0%, #94a3b8 100%); color: white; }
+        .medal-bronze { background: linear-gradient(135deg, #fdba74 0%, #f97316 100%); color: white; }
+        .loading-spinner { width: 48px; height: 48px; border: 4px solid #f1f5f9; border-top-color: #eab308; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .chart-container { min-height: 320px; overflow: hidden; }
+        .js-plotly-plot .plotly .main-svg { overflow: visible; }
+        @media (max-width: 768px) {
+            .chart-container { min-height: 280px; }
+            .kpi-value { font-size: 24px; }
+            .kpi-card { padding: 16px 12px; }
+        }
+        .filter-select { padding: 10px 16px; border: 1px solid #e2e8f0; border-radius: 10px; background: white; font-size: 14px; min-width: 180px; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .data-table { font-size: 13px; }
+        .data-table th { background: #f8fafc; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; }
+        .data-table td, .data-table th { padding: 12px 16px; text-align: left; border-bottom: 1px solid #f1f5f9; }
+        .data-table tr:hover { background: #fefce8; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="flex items-center justify-between py-4">
+                <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-xl flex items-center justify-center text-2xl shadow-lg">
+                        &#129370;
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold text-slate-900">Dashboard de Precios de Huevo</h1>
+                        <p class="text-sm text-slate-500">Datos PROFECO Mexico | <span id="date-range">Cargando...</span></p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="record-count" class="badge badge-blue">-- registros</span>
+                    <button onclick="refreshData()" class="px-4 py-2 bg-egg-500 hover:bg-egg-600 text-white font-medium rounded-lg transition flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        Actualizar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="bg-white border-b border-slate-200 sticky top-[73px] z-40">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="flex gap-1 overflow-x-auto scrollbar-hide">
+                <button class="tab-btn active" data-tab="resumen">Resumen</button>
+                <button class="tab-btn" data-tab="ciudades">Por Ciudad</button>
+                <button class="tab-btn" data-tab="tiendas">Por Tienda</button>
+                <button class="tab-btn" data-tab="marcas">Por Marca</button>
+                <button class="tab-btn" data-tab="presentacion">Por Presentacion</button>
+                <button class="tab-btn" data-tab="datos">Explorar Datos</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main -->
+    <main class="max-w-7xl mx-auto px-6 py-8">
+
+        <!-- Loading -->
+        <div id="loading" class="flex flex-col items-center justify-center py-20">
+            <div class="loading-spinner"></div>
+            <p class="mt-4 text-slate-500 font-medium">Cargando datos...</p>
+        </div>
+
+        <!-- Tab: Resumen -->
+        <section id="tab-resumen" class="tab-content hidden">
+            <!-- KPIs -->
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
+                <div class="kpi-card bg-gradient-to-br from-yellow-50 to-orange-50">
+                    <div class="kpi-value text-egg-600" id="kpi-avg">$--</div>
+                    <div class="kpi-label">Precio Promedio</div>
+                </div>
+                <div class="kpi-card bg-gradient-to-br from-emerald-50 to-green-50">
+                    <div class="kpi-value text-emerald-600" id="kpi-min">$--</div>
+                    <div class="kpi-label">Precio Minimo</div>
+                </div>
+                <div class="kpi-card bg-gradient-to-br from-red-50 to-rose-50">
+                    <div class="kpi-value text-red-600" id="kpi-max">$--</div>
+                    <div class="kpi-label">Precio Maximo</div>
+                </div>
+                <div class="kpi-card bg-gradient-to-br from-blue-50 to-indigo-50">
+                    <div class="kpi-value text-blue-600" id="kpi-per-egg">$--</div>
+                    <div class="kpi-label">Promedio/Pieza</div>
+                </div>
+                <div class="kpi-card bg-gradient-to-br from-purple-50 to-violet-50">
+                    <div class="kpi-value text-purple-600" id="kpi-brands">--</div>
+                    <div class="kpi-label">Marcas</div>
+                </div>
+                <div class="kpi-card bg-gradient-to-br from-slate-100 to-slate-50">
+                    <div class="kpi-value text-slate-600" id="kpi-stores">--</div>
+                    <div class="kpi-label">Tiendas</div>
+                </div>
+            </div>
+
+            <!-- Data Quality Banner -->
+            <div class="card mb-8 p-4 bg-emerald-50 border-emerald-200">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">&#9989;</span>
+                    <div>
+                        <div class="font-semibold text-emerald-800">Calidad de Datos</div>
+                        <div class="text-sm text-emerald-700">
+                            <span id="quality-brand">--</span>% con marca identificada |
+                            <span id="quality-qty">--</span>% con cantidad de piezas |
+                            Fuente: PROFECO "Quien es Quien en los Precios"
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid lg:grid-cols-2 gap-6 mb-8">
+                <!-- Map -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="font-semibold text-slate-900">Mapa de Precios</h3>
+                        <p class="text-sm text-slate-500 mt-1">Precio promedio por ciudad</p>
+                    </div>
+                    <div class="card-body">
+                        <div id="map-chart" class="chart-container"></div>
+                    </div>
+                </div>
+
+                <!-- City Rankings -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="font-semibold text-slate-900">Ranking de Ciudades</h3>
+                        <p class="text-sm text-slate-500 mt-1">De mas barato a mas caro</p>
+                    </div>
+                    <div id="city-rankings" class="max-h-[400px] overflow-y-auto"></div>
+                </div>
+            </div>
+
+            <div class="grid lg:grid-cols-2 gap-6">
+                <!-- Top Brands -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="font-semibold text-slate-900">Principales Marcas</h3>
+                    </div>
+                    <div class="card-body">
+                        <div id="brands-chart" class="chart-container"></div>
+                    </div>
+                </div>
+
+                <!-- Pack Sizes -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="font-semibold text-slate-900">Precio por Pieza segun Presentacion</h3>
+                        <p class="text-sm text-slate-500 mt-1">Cual presentacion tiene mejor valor?</p>
+                    </div>
+                    <div class="card-body">
+                        <div id="packs-chart" class="chart-container"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab: Ciudades -->
+        <section id="tab-ciudades" class="tab-content hidden">
+            <div class="grid lg:grid-cols-3 gap-6 mb-8">
+                <!-- Regions -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="font-semibold text-slate-900">Por Region</h3>
+                    </div>
+                    <div id="region-list"></div>
+                </div>
+
+                <!-- City Detail -->
+                <div class="card lg:col-span-2">
+                    <div class="card-header flex items-center justify-between">
+                        <div>
+                            <h3 class="font-semibold text-slate-900">Detalle por Ciudad</h3>
+                            <p class="text-sm text-slate-500 mt-1">Selecciona una ciudad para ver alcaldias</p>
+                        </div>
+                        <select id="city-select" class="filter-select" onchange="loadCityDetail()">
+                            <option value="">Seleccionar ciudad...</option>
+                        </select>
+                    </div>
+                    <div id="municipio-list" class="max-h-[400px] overflow-y-auto">
+                        <p class="p-6 text-slate-500 text-center">Selecciona una ciudad arriba</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- City Comparison Chart -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="font-semibold text-slate-900">Comparacion de Ciudades</h3>
+                </div>
+                <div class="card-body">
+                    <div id="city-comparison-chart" class="chart-container"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab: Tiendas -->
+        <section id="tab-tiendas" class="tab-content hidden">
+            <div class="flex flex-wrap gap-4 mb-6">
+                <select id="store-city-filter" class="filter-select" onchange="loadStoreData()">
+                    <option value="">Todas las ciudades</option>
+                </select>
+            </div>
+
+            <div class="grid lg:grid-cols-2 gap-6 mb-8">
+                <!-- Store Rankings -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="font-semibold text-slate-900">Ranking de Tiendas</h3>
+                        <p class="text-sm text-slate-500 mt-1">Por precio promedio (menor es mejor)</p>
+                    </div>
+                    <div id="store-rankings" class="max-h-[500px] overflow-y-auto"></div>
+                </div>
+
+                <!-- Store Chart -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="font-semibold text-slate-900">Grafica de Tiendas</h3>
+                    </div>
+                    <div class="card-body">
+                        <div id="store-chart" class="chart-container"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab: Marcas -->
+        <section id="tab-marcas" class="tab-content hidden">
+            <div class="grid lg:grid-cols-2 gap-6 mb-8">
+                <!-- Brand Rankings -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="font-semibold text-slate-900">Ranking de Marcas</h3>
+                        <p class="text-sm text-slate-500 mt-1">Por volumen de datos</p>
+                    </div>
+                    <div id="brand-rankings" class="max-h-[500px] overflow-y-auto"></div>
+                </div>
+
+                <!-- Brand Comparison -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="font-semibold text-slate-900">Precio Promedio por Marca</h3>
+                    </div>
+                    <div class="card-body">
+                        <div id="brand-comparison-chart" class="chart-container"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Egg Types -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="font-semibold text-slate-900">Huevo Blanco vs Rojo</h3>
+                </div>
+                <div class="card-body">
+                    <div id="egg-type-chart" class="chart-container" style="height: 250px;"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab: Presentacion -->
+        <section id="tab-presentacion" class="tab-content hidden">
+            <div class="grid lg:grid-cols-2 gap-6 mb-8">
+                <!-- Pack Size Table -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="font-semibold text-slate-900">Analisis por Presentacion</h3>
+                        <p class="text-sm text-slate-500 mt-1">Precio por pieza segun cantidad en paquete</p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full data-table">
+                            <thead>
+                                <tr>
+                                    <th>Piezas</th>
+                                    <th>Precio Prom.</th>
+                                    <th>$/Pieza</th>
+                                    <th>Registros</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pack-table"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Pack Chart -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="font-semibold text-slate-900">Valor por Presentacion</h3>
+                        <p class="text-sm text-slate-500 mt-1">Menor precio por pieza = Mejor valor</p>
+                    </div>
+                    <div class="card-body">
+                        <div id="pack-value-chart" class="chart-container"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Best Deals -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="font-semibold text-slate-900">Mejores Ofertas (Menor Precio por Pieza)</h3>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full data-table">
+                        <thead>
+                            <tr>
+                                <th>Producto</th>
+                                <th>Marca</th>
+                                <th>Piezas</th>
+                                <th>Precio</th>
+                                <th>$/Pieza</th>
+                                <th>Tienda</th>
+                                <th>Ciudad</th>
+                            </tr>
+                        </thead>
+                        <tbody id="deals-table"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab: Datos -->
+        <section id="tab-datos" class="tab-content hidden">
+            <!-- Filters -->
+            <div class="card mb-6">
+                <div class="card-body">
+                    <div class="grid md:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Ciudad</label>
+                            <select id="filter-city" class="filter-select w-full" onchange="applyFilters()">
+                                <option value="">Todas</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Tienda</label>
+                            <select id="filter-chain" class="filter-select w-full" onchange="applyFilters()">
+                                <option value="">Todas</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Marca</label>
+                            <select id="filter-brand" class="filter-select w-full" onchange="applyFilters()">
+                                <option value="">Todas</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Piezas</label>
+                            <select id="filter-qty" class="filter-select w-full" onchange="applyFilters()">
+                                <option value="">Todas</option>
+                                <option value="12">12 piezas</option>
+                                <option value="18">18 piezas</option>
+                                <option value="30">30 piezas</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results -->
+            <div class="grid lg:grid-cols-4 gap-4 mb-6">
+                <div class="kpi-card card">
+                    <div class="kpi-value text-slate-700" id="filter-count">--</div>
+                    <div class="kpi-label">Registros</div>
+                </div>
+                <div class="kpi-card card">
+                    <div class="kpi-value text-egg-600" id="filter-avg">$--</div>
+                    <div class="kpi-label">Promedio</div>
+                </div>
+                <div class="kpi-card card">
+                    <div class="kpi-value text-emerald-600" id="filter-min">$--</div>
+                    <div class="kpi-label">Minimo</div>
+                </div>
+                <div class="kpi-card card">
+                    <div class="kpi-value text-red-600" id="filter-max">$--</div>
+                    <div class="kpi-label">Maximo</div>
+                </div>
+            </div>
+
+            <!-- Data Table -->
+            <div class="card">
+                <div class="card-header flex items-center justify-between">
+                    <h3 class="font-semibold text-slate-900">Datos Filtrados</h3>
+                    <button onclick="exportCSV()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg text-sm">
+                        Exportar CSV
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full data-table">
+                        <thead>
+                            <tr>
+                                <th>Producto</th>
+                                <th>Marca</th>
+                                <th>Piezas</th>
+                                <th>Precio</th>
+                                <th>$/Pieza</th>
+                                <th>Tienda</th>
+                                <th>Ciudad</th>
+                                <th>Fecha</th>
+                            </tr>
+                        </thead>
+                        <tbody id="data-table"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-slate-900 text-white mt-8">
+        <div class="max-w-7xl mx-auto px-6 py-4">
+            <div class="flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
+                <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-slate-400">
+                    <a href="https://www.gpounj.com" target="_blank" class="text-egg-400 hover:text-egg-300 font-medium">www.gpounj.com</a>
+                    <span class="text-slate-600">|</span>
+                    <span>Grupo Pounj S.A de C.V. Mexico</span>
+                    <span class="text-slate-600">•</span>
+                    <span>Pfds S.A.P.I de C.V. Mexico</span>
+                    <span class="text-slate-600">•</span>
+                    <span>Grupo Pounj Software Exports India</span>
+                    <span class="text-slate-600">•</span>
+                    <span>Grupo Pounj USA Inc.</span>
+                </div>
+                <div class="text-slate-500">
+                    &copy; 2026 Gpounj Consulting. All rights reserved.
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Plotly config - NO MODE BAR
+        const plotlyConfig = {
+            displayModeBar: false,
+            responsive: true
+        };
+
+        // Global state
+        let dashboardData = {
+            summary: null,
+            cities: [],
+            chains: [],
+            brands: [],
+            packs: [],
+            filteredData: []
+        };
+
+        // Init
+        document.addEventListener('DOMContentLoaded', async () => {
+            setupTabs();
+            await loadDashboard();
+        });
+
+        function setupTabs() {
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+                    document.getElementById(`tab-${btn.dataset.tab}`).classList.remove('hidden');
+
+                    // Load tab-specific data
+                    const tab = btn.dataset.tab;
+                    if (tab === 'ciudades') loadCityTab();
+                    if (tab === 'tiendas') loadStoreData();
+                    if (tab === 'marcas') loadBrandData();
+                    if (tab === 'presentacion') loadPackData();
+                    if (tab === 'datos') loadDataTab();
+                });
+            });
+        }
+
+        async function loadDashboard() {
+            try {
+                const [summary, cities, chains, brands, packs, status] = await Promise.all([
+                    fetch('/api/summary').then(r => r.json()),
+                    fetch('/api/cities').then(r => r.json()),
+                    fetch('/api/chains').then(r => r.json()),
+                    fetch('/api/brands').then(r => r.json()),
+                    fetch('/api/packs').then(r => r.json()),
+                    fetch('/api/data-status').then(r => r.json())
+                ]);
+
+                dashboardData.summary = summary.data;
+                dashboardData.cities = cities.cities || [];
+                dashboardData.chains = chains.chains || [];
+                dashboardData.brands = brands.brands || [];
+                dashboardData.packs = packs.packs || [];
+
+                // Update header
+                if (status.status) {
+                    document.getElementById('date-range').textContent = status.status.date_range || 'Sin datos';
+                    document.getElementById('record-count').textContent = `${(status.status.total_records || 0).toLocaleString()} registros`;
+                }
+
+                // Populate dropdowns
+                populateDropdowns();
+
+                // Hide loading
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('tab-resumen').classList.remove('hidden');
+
+                // Render overview
+                renderOverview();
+
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('loading').innerHTML = `
+                    <div class="text-center">
+                        <p class="text-red-500 font-medium">Error al cargar datos</p>
+                        <p class="text-slate-500 mt-2">Verifique que el servidor este corriendo.</p>
+                        <button onclick="refreshData()" class="mt-4 px-4 py-2 bg-egg-500 text-white rounded-lg">Cargar Datos</button>
+                    </div>
+                `;
+            }
+        }
+
+        function populateDropdowns() {
+            const cityOptions = dashboardData.cities.map(c => `<option value="${c.ciudad_code}">${c.ciudad}</option>`).join('');
+            const chainOptions = dashboardData.chains.map(c => `<option value="${c.cadena_comercial}">${c.cadena_comercial}</option>`).join('');
+            const brandOptions = dashboardData.brands.map(b => `<option value="${b.marca}">${b.marca}</option>`).join('');
+
+            ['city-select', 'store-city-filter', 'filter-city'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.innerHTML = el.options[0].outerHTML + cityOptions;
+            });
+
+            const chainEl = document.getElementById('filter-chain');
+            if (chainEl) chainEl.innerHTML = chainEl.options[0].outerHTML + chainOptions;
+
+            const brandEl = document.getElementById('filter-brand');
+            if (brandEl) brandEl.innerHTML = brandEl.options[0].outerHTML + brandOptions;
+        }
+
+        // ============ OVERVIEW ============
+        function renderOverview() {
+            const data = dashboardData.summary;
+            if (!data) return;
+
+            // KPIs
+            document.getElementById('kpi-avg').textContent = `$${data.avg_price || '--'}`;
+            document.getElementById('kpi-min').textContent = `$${data.min_price || '--'}`;
+            document.getElementById('kpi-max').textContent = `$${data.max_price || '--'}`;
+            document.getElementById('kpi-per-egg').textContent = `$${data.avg_price_per_egg || '--'}`;
+            document.getElementById('kpi-brands').textContent = data.brands || '--';
+            document.getElementById('kpi-stores').textContent = data.stores || '--';
+
+            // Data quality
+            if (data.data_quality) {
+                document.getElementById('quality-brand').textContent = data.data_quality.brand_pct;
+                document.getElementById('quality-qty').textContent = data.data_quality.qty_pct;
+            }
+
+            // City rankings
+            renderCityRankings();
+
+            // Map
+            renderMap();
+
+            // Brands chart
+            renderBrandsChart();
+
+            // Packs chart
+            renderPacksChart();
+        }
+
+        function renderCityRankings() {
+            const cities = dashboardData.cities;
+            if (!cities.length) return;
+
+            document.getElementById('city-rankings').innerHTML = cities.map((city, i) => {
+                const medalClass = i < 3 ? ['gold', 'silver', 'bronze'][i] : '';
+                return `
+                    <div class="rank-row ${medalClass}">
+                        <div class="flex items-center gap-4">
+                            <div class="medal ${i < 3 ? 'medal-' + ['gold', 'silver', 'bronze'][i] : 'bg-slate-200 text-slate-600'}">${i + 1}</div>
+                            <div>
+                                <div class="font-semibold text-slate-900">${city.ciudad}</div>
+                                <div class="text-xs text-slate-500">${city.region} | ${city.record_count} registros | ${city.store_count} tiendas</div>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-lg font-bold ${i === 0 ? 'text-emerald-600' : 'text-slate-700'}">$${city.avg_price}</div>
+                            <div class="text-xs text-slate-500">$${city.avg_per_egg}/pieza</div>
+                            ${i > 0 ? `<div class="text-xs text-red-500">+${city.percent_more}%</div>` : '<span class="badge badge-gold text-xs">Mas barato</span>'}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderMap() {
+            const cities = dashboardData.cities;
+            const coords = {
+                "0901": {lat: 19.43, lon: -99.13}, "1401": {lat: 20.66, lon: -103.35},
+                "1901": {lat: 25.69, lon: -100.32}, "0201": {lat: 32.51, lon: -117.04},
+                "2101": {lat: 19.04, lon: -98.21}, "2301": {lat: 21.16, lon: -86.85},
+                "3101": {lat: 20.97, lon: -89.59}, "1101": {lat: 21.13, lon: -101.69}
+            };
+
+            const mapCities = cities.filter(c => coords[c.ciudad_code]);
+
+            const trace = {
+                type: 'scattergeo',
+                mode: 'markers+text',
+                lat: mapCities.map(c => coords[c.ciudad_code].lat),
+                lon: mapCities.map(c => coords[c.ciudad_code].lon),
+                text: mapCities.map(c => c.ciudad),
+                textposition: 'top center',
+                marker: {
+                    size: mapCities.map(c => Math.max(15, Math.min(35, c.record_count / 20))),
+                    color: mapCities.map(c => c.avg_price),
+                    colorscale: 'RdYlGn',
+                    reversescale: true,
+                    colorbar: { title: 'Precio', tickprefix: '$' },
+                    line: { color: 'white', width: 2 }
+                },
+                hovertemplate: '<b>%{text}</b><br>Promedio: $%{marker.color:.2f}<extra></extra>'
+            };
+
+            const layout = {
+                geo: {
+                    scope: 'north america',
+                    center: { lat: 23.6, lon: -102.5 },
+                    projection: { scale: 4 },
+                    showland: true, landcolor: '#f1f5f9',
+                    showocean: true, oceancolor: '#e0f2fe',
+                    showcountries: true, countrycolor: '#cbd5e1'
+                },
+                margin: { t: 10, b: 10, l: 10, r: 10 },
+                height: 320
+            };
+
+            Plotly.newPlot('map-chart', [trace], layout, plotlyConfig);
+        }
+
+        function renderBrandsChart() {
+            const brands = dashboardData.brands.slice(0, 10);
+            if (!brands.length) return;
+
+            const trace = {
+                type: 'bar',
+                y: brands.map(b => b.marca),
+                x: brands.map(b => b.record_count),
+                orientation: 'h',
+                marker: { color: '#eab308' },
+                text: brands.map(b => `$${b.avg_price}`),
+                textposition: 'inside',
+                textfont: { color: '#fff', size: 11 },
+                insidetextanchor: 'end',
+                hovertemplate: '<b>%{y}</b><br>Registros: %{x}<br>Precio prom: %{text}<extra></extra>'
+            };
+
+            const layout = {
+                margin: { t: 10, b: 40, l: 140, r: 20 },
+                xaxis: { title: 'Cantidad de registros' },
+                yaxis: { autorange: 'reversed', automargin: true },
+                height: 350,
+                bargap: 0.2
+            };
+
+            Plotly.newPlot('brands-chart', [trace], layout, plotlyConfig);
+        }
+
+        function renderPacksChart() {
+            const packs = dashboardData.packs;
+            if (!packs.length) return;
+
+            const trace = {
+                type: 'bar',
+                x: packs.map(p => `${p.cantidad_piezas} pzs`),
+                y: packs.map(p => p.avg_per_egg),
+                marker: {
+                    color: packs.map(p => p.avg_per_egg),
+                    colorscale: 'RdYlGn',
+                    reversescale: true
+                },
+                text: packs.map(p => `$${p.avg_per_egg}`),
+                textposition: 'auto',
+                textfont: { size: 11 },
+                hovertemplate: '<b>%{x}</b><br>$/pieza: $%{y:.3f}<extra></extra>'
+            };
+
+            const layout = {
+                margin: { t: 40, b: 50, l: 60, r: 20 },
+                yaxis: { title: '$/Pieza', automargin: true },
+                xaxis: { automargin: true },
+                height: 320
+            };
+
+            Plotly.newPlot('packs-chart', [trace], layout, plotlyConfig);
+        }
+
+        // ============ CIUDADES TAB ============
+        async function loadCityTab() {
+            // Regions
+            const regionsRes = await fetch('/api/regions').then(r => r.json());
+            const regions = regionsRes.regions || [];
+
+            document.getElementById('region-list').innerHTML = regions.map((r, i) => `
+                <div class="rank-row ${i === 0 ? 'gold' : ''}">
+                    <div>
+                        <div class="font-semibold text-slate-900">${r.region}</div>
+                        <div class="text-xs text-slate-500">${r.city_count} ciudades | ${r.record_count} registros</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-bold text-slate-700">$${r.avg_price}</div>
+                        <div class="text-xs text-slate-500">$${r.avg_per_egg}/pz</div>
+                    </div>
+                </div>
+            `).join('');
+
+            // City comparison chart
+            const cities = dashboardData.cities;
+            const trace = {
+                type: 'bar',
+                x: cities.map(c => c.ciudad),
+                y: cities.map(c => c.avg_price),
+                marker: {
+                    color: cities.map(c => c.avg_price),
+                    colorscale: 'RdYlGn',
+                    reversescale: true
+                },
+                text: cities.map(c => `$${c.avg_price}`),
+                textposition: 'auto',
+                textfont: { size: 11 }
+            };
+
+            const layout = {
+                margin: { t: 40, b: 100, l: 60, r: 20 },
+                yaxis: { title: 'Precio Promedio ($)', automargin: true },
+                xaxis: { tickangle: -45, automargin: true },
+                height: 380
+            };
+
+            Plotly.newPlot('city-comparison-chart', [trace], layout, plotlyConfig);
+        }
+
+        async function loadCityDetail() {
+            const cityCode = document.getElementById('city-select').value;
+            if (!cityCode) {
+                document.getElementById('municipio-list').innerHTML = '<p class="p-6 text-slate-500 text-center">Selecciona una ciudad arriba</p>';
+                return;
+            }
+
+            const res = await fetch(`/api/municipios?city=${cityCode}`).then(r => r.json());
+            const municipios = res.municipios || [];
+
+            if (!municipios.length) {
+                document.getElementById('municipio-list').innerHTML = '<p class="p-6 text-slate-500 text-center">Sin datos de alcaldias</p>';
+                return;
+            }
+
+            document.getElementById('municipio-list').innerHTML = municipios.map((m, i) => `
+                <div class="rank-row ${i === 0 ? 'gold' : ''}">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full ${i === 0 ? 'bg-egg-500 text-white' : 'bg-slate-200 text-slate-600'} flex items-center justify-center font-bold text-sm">${i + 1}</div>
+                        <div>
+                            <div class="font-medium text-slate-900">${m.municipio}</div>
+                            <div class="text-xs text-slate-500">${m.record_count} registros | ${m.stores} tiendas</div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-bold ${i === 0 ? 'text-emerald-600' : 'text-slate-700'}">$${m.avg_price}</div>
+                        <div class="text-xs text-slate-500">$${m.avg_per_egg}/pz</div>
+                        ${i > 0 ? `<div class="text-xs text-red-500">+${m.percent_more}%</div>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // ============ TIENDAS TAB ============
+        async function loadStoreData() {
+            const cityCode = document.getElementById('store-city-filter').value;
+            const url = cityCode ? `/api/chains?city=${cityCode}` : '/api/chains';
+            const res = await fetch(url).then(r => r.json());
+            const chains = res.chains || [];
+
+            // Rankings
+            document.getElementById('store-rankings').innerHTML = chains.map((c, i) => `
+                <div class="rank-row ${i < 3 ? ['gold', 'silver', 'bronze'][i] : ''}">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full ${i < 3 ? ['bg-egg-500', 'bg-slate-400', 'bg-orange-400'][i] + ' text-white' : 'bg-slate-200 text-slate-600'} flex items-center justify-center font-bold text-sm">${i + 1}</div>
+                        <div>
+                            <div class="font-medium text-slate-900">${c.cadena_comercial}</div>
+                            <div class="text-xs text-slate-500">${c.tipo_tienda} | ${c.record_count} registros | ${c.brand_variety} marcas</div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-bold ${i === 0 ? 'text-emerald-600' : 'text-slate-700'}">$${c.avg_price}</div>
+                        <div class="text-xs text-slate-500">$${c.avg_per_egg}/pz</div>
+                        ${i > 0 ? `<div class="text-xs text-red-500">+${c.percent_more}%</div>` : ''}
+                    </div>
+                </div>
+            `).join('') || '<p class="p-6 text-slate-500 text-center">Sin datos</p>';
+
+            // Chart
+            const top10 = chains.slice(0, 12);
+            const trace = {
+                type: 'bar',
+                y: top10.map(c => c.cadena_comercial),
+                x: top10.map(c => c.avg_price),
+                orientation: 'h',
+                marker: {
+                    color: top10.map((_, i) => i === 0 ? '#10b981' : i < 3 ? '#22c55e' : '#64748b')
+                },
+                text: top10.map(c => `$${c.avg_price}`),
+                textposition: 'inside',
+                textfont: { color: '#fff', size: 11 },
+                insidetextanchor: 'end'
+            };
+
+            const layout = {
+                margin: { t: 10, b: 40, l: 180, r: 20 },
+                xaxis: { title: 'Precio Promedio ($)' },
+                yaxis: { autorange: 'reversed', automargin: true },
+                height: 450,
+                bargap: 0.2
+            };
+
+            Plotly.newPlot('store-chart', [trace], layout, plotlyConfig);
+        }
+
+        // ============ MARCAS TAB ============
+        async function loadBrandData() {
+            const brands = dashboardData.brands;
+
+            // Rankings
+            document.getElementById('brand-rankings').innerHTML = brands.map((b, i) => `
+                <div class="rank-row">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-sm">${i + 1}</div>
+                        <div>
+                            <div class="font-medium text-slate-900">${b.marca}</div>
+                            <div class="text-xs text-slate-500">${b.record_count} registros | ${b.cities} ciudades | ${b.stores} tiendas</div>
+                            <div class="text-xs text-slate-400">Presentaciones: ${b.pack_sizes || 'N/A'}</div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-bold text-slate-700">$${b.avg_price}</div>
+                        <div class="text-xs text-slate-500">$${b.avg_per_egg}/pz</div>
+                    </div>
+                </div>
+            `).join('');
+
+            // Brand comparison chart
+            const top10 = brands.slice(0, 10);
+            const trace = {
+                type: 'bar',
+                x: top10.map(b => b.marca),
+                y: top10.map(b => b.avg_price),
+                marker: { color: '#eab308' },
+                text: top10.map(b => `$${b.avg_price}`),
+                textposition: 'auto',
+                textfont: { size: 11 }
+            };
+
+            const layout = {
+                margin: { t: 40, b: 100, l: 60, r: 20 },
+                yaxis: { title: 'Precio Promedio ($)', automargin: true },
+                xaxis: { tickangle: -45, automargin: true },
+                height: 380
+            };
+
+            Plotly.newPlot('brand-comparison-chart', [trace], layout, plotlyConfig);
+
+            // Egg types
+            const typesRes = await fetch('/api/egg-types').then(r => r.json());
+            const types = typesRes.egg_types || [];
+
+            const typeTrace = {
+                type: 'pie',
+                labels: types.map(t => t.tipo_huevo === 'blanco' ? 'Blanco' : t.tipo_huevo === 'rojo' ? 'Rojo' : 'Otro'),
+                values: types.map(t => t.record_count),
+                marker: { colors: ['#fef9c3', '#fecaca', '#e2e8f0'] },
+                textinfo: 'label+percent',
+                hovertemplate: '<b>%{label}</b><br>Registros: %{value}<br>Promedio: $%{customdata:.2f}<extra></extra>',
+                customdata: types.map(t => t.avg_price)
+            };
+
+            Plotly.newPlot('egg-type-chart', [typeTrace], { margin: { t: 20, b: 20, l: 20, r: 20 }, height: 250 }, plotlyConfig);
+        }
+
+        // ============ PRESENTACION TAB ============
+        async function loadPackData() {
+            const packs = dashboardData.packs;
+
+            // Table
+            document.getElementById('pack-table').innerHTML = packs.map(p => `
+                <tr>
+                    <td class="font-semibold">${p.cantidad_piezas} piezas</td>
+                    <td>$${p.avg_price}</td>
+                    <td class="font-semibold text-emerald-600">$${p.avg_per_egg}</td>
+                    <td>${p.record_count}</td>
+                </tr>
+            `).join('');
+
+            // Chart
+            const trace = {
+                type: 'bar',
+                x: packs.map(p => `${p.cantidad_piezas} pzs`),
+                y: packs.map(p => p.avg_per_egg),
+                marker: {
+                    color: packs.map((_, i) => i === packs.length - 1 ? '#10b981' : '#eab308')
+                },
+                text: packs.map(p => `$${p.avg_per_egg}`),
+                textposition: 'auto',
+                textfont: { size: 11 }
+            };
+
+            const layout = {
+                margin: { t: 40, b: 50, l: 60, r: 20 },
+                yaxis: { title: 'Precio por Pieza ($)', automargin: true },
+                xaxis: { automargin: true },
+                height: 320
+            };
+
+            Plotly.newPlot('pack-value-chart', [trace], layout, plotlyConfig);
+
+            // Best deals
+            const dealsRes = await fetch('/api/best-deals?limit=15').then(r => r.json());
+            const deals = dealsRes.deals || [];
+
+            document.getElementById('deals-table').innerHTML = deals.map(d => `
+                <tr>
+                    <td class="max-w-[200px] truncate" title="${d.producto_original}">${d.producto_original}</td>
+                    <td>${d.marca || '-'}</td>
+                    <td>${d.cantidad_piezas || '-'}</td>
+                    <td>$${d.precio}</td>
+                    <td class="font-semibold text-emerald-600">$${d.precio_por_pieza}</td>
+                    <td>${d.cadena_comercial || '-'}</td>
+                    <td>${d.ciudad || '-'}</td>
+                </tr>
+            `).join('');
+        }
+
+        // ============ DATOS TAB ============
+        async function loadDataTab() {
+            applyFilters();
+        }
+
+        async function applyFilters() {
+            const city = document.getElementById('filter-city').value;
+            const chain = document.getElementById('filter-chain').value;
+            const brand = document.getElementById('filter-brand').value;
+            const qty = document.getElementById('filter-qty').value;
+
+            const params = new URLSearchParams();
+            if (city) params.append('city', city);
+            if (chain) params.append('chain', chain);
+            if (brand) params.append('brand', brand);
+            if (qty) params.append('cantidad', qty);
+            params.append('limit', '200');
+
+            const res = await fetch(`/api/prices?${params}`).then(r => r.json());
+            const prices = res.prices || [];
+            dashboardData.filteredData = prices;
+
+            // Update stats
+            document.getElementById('filter-count').textContent = prices.length.toLocaleString();
+
+            if (prices.length) {
+                const avg = prices.reduce((s, p) => s + p.precio, 0) / prices.length;
+                const min = Math.min(...prices.map(p => p.precio));
+                const max = Math.max(...prices.map(p => p.precio));
+                document.getElementById('filter-avg').textContent = `$${avg.toFixed(2)}`;
+                document.getElementById('filter-min').textContent = `$${min.toFixed(2)}`;
+                document.getElementById('filter-max').textContent = `$${max.toFixed(2)}`;
+            } else {
+                document.getElementById('filter-avg').textContent = '$--';
+                document.getElementById('filter-min').textContent = '$--';
+                document.getElementById('filter-max').textContent = '$--';
+            }
+
+            // Table
+            document.getElementById('data-table').innerHTML = prices.slice(0, 100).map(p => `
+                <tr>
+                    <td class="max-w-[200px] truncate" title="${p.producto_original}">${p.producto_original}</td>
+                    <td>${p.marca || '-'}</td>
+                    <td>${p.cantidad_piezas || '-'}</td>
+                    <td>$${p.precio}</td>
+                    <td>${p.precio_por_pieza ? '$' + p.precio_por_pieza : '-'}</td>
+                    <td>${p.cadena_comercial || '-'}</td>
+                    <td>${p.ciudad || '-'}</td>
+                    <td>${p.fecha_observacion || '-'}</td>
+                </tr>
+            `).join('') || '<tr><td colspan="8" class="text-center text-slate-500 py-8">Sin resultados</td></tr>';
+        }
+
+        function exportCSV() {
+            const data = dashboardData.filteredData;
+            if (!data.length) return alert('No hay datos para exportar');
+
+            const headers = ['Producto', 'Marca', 'Piezas', 'Precio', '$/Pieza', 'Tienda', 'Ciudad', 'Fecha'];
+            const rows = data.map(p => [
+                `"${(p.producto_original || '').replace(/"/g, '""')}"`,
+                p.marca || '',
+                p.cantidad_piezas || '',
+                p.precio,
+                p.precio_por_pieza || '',
+                `"${(p.cadena_comercial || '').replace(/"/g, '""')}"`,
+                p.ciudad || '',
+                p.fecha_observacion || ''
+            ]);
+
+            const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'precios_huevo_profeco.csv';
+            a.click();
+        }
+
+        async function refreshData() {
+            if (confirm('Cargar datos frescos de PROFECO? Esto puede tomar un momento.')) {
+                document.getElementById('loading').classList.remove('hidden');
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+
+                try {
+                    await fetch('/api/fetch-fresh', { method: 'POST' });
+                    alert('Carga iniciada. Espere unos segundos y recargue la pagina.');
+                    setTimeout(() => location.reload(), 5000);
+                } catch (e) {
+                    alert('Error: ' + e.message);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
