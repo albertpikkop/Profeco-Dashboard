@@ -15,6 +15,7 @@ from typing import Optional, List
 from contextlib import contextmanager
 
 from fetcher import fetch_all_cities, CITIES, DB_PATH, init_database, ensure_database, classify_store_type
+from rag.router import rag_router
 
 # Initialize FastAPI
 app = FastAPI(
@@ -35,6 +36,9 @@ app.add_middleware(
 # Ensure directories exist
 os.makedirs("data", exist_ok=True)
 os.makedirs("static", exist_ok=True)
+
+# Mount RAG router
+app.include_router(rag_router)
 
 
 @contextmanager
@@ -59,6 +63,15 @@ async def root():
         return HTMLResponse(content=open("static/index.html").read())
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Dashboard cargando...</h1><p>Ejecute la carga de datos primero.</p>")
+
+
+@app.get("/chat")
+async def chat_page():
+    """Serve the RAG document query portal."""
+    try:
+        return HTMLResponse(content=open("static/chat.html").read())
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>Portal de Consulta</h1><p>Archivo chat.html no encontrado.</p>")
 
 
 @app.get("/api/summary")

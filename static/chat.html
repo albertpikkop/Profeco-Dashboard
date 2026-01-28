@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inteligencia de Mercado — Huevo Mexico</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        egg: { 50: '#fffbeb', 100: '#fef3c7', 200: '#fde68a', 300: '#fcd34d', 400: '#fbbf24', 500: '#f59e0b', 600: '#d97706' },
+                        brand: { 50: '#f0f9ff', 100: '#e0f2fe', 500: '#0ea5e9', 600: '#0284c7', 700: '#0369a1' }
+                    },
+                    fontFamily: { sans: ['Inter', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .chat-container { height: calc(100vh - 64px); }
+        .messages-area { overflow-y: auto; scroll-behavior: smooth; }
+        .message-bubble { max-width: 85%; }
+        .source-card { transition: all 0.2s ease; }
+        .source-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .typing-indicator span { animation: bounce 1.4s infinite ease-in-out; }
+        .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+        .sidebar { transition: transform 0.3s ease; }
+        .sidebar-collapsed { transform: translateX(-100%); }
+        .tab-active { border-bottom: 2px solid #f59e0b; color: #d97706; font-weight: 600; }
+        .category-card { transition: all 0.2s ease; cursor: pointer; }
+        .category-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: #fbbf24; }
+        .suggestion-chip { transition: all 0.15s ease; }
+        .suggestion-chip:hover { background: #fef3c7; border-color: #f59e0b; }
+        .citation-badge {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 18px; height: 18px; border-radius: 50%;
+            background: #0ea5e9; color: white; font-size: 10px; font-weight: 700;
+            cursor: pointer; vertical-align: super; margin: 0 1px;
+            transition: background 0.15s;
+        }
+        .citation-badge:hover { background: #0369a1; }
+        .action-btn { transition: color 0.15s; }
+        /* Upload zone */
+        .upload-zone {
+            border: 2px dashed #d1d5db; border-radius: 12px; padding: 16px;
+            text-align: center; cursor: pointer; transition: all 0.2s ease;
+        }
+        .upload-zone:hover, .upload-zone.drag-over {
+            border-color: #f59e0b; background: #fffbeb;
+        }
+        .upload-zone.uploading { opacity: 0.6; pointer-events: none; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200 h-16 flex items-center px-4 justify-between">
+        <div class="flex items-center gap-3">
+            <button onclick="toggleSidebar()" class="p-2 hover:bg-gray-100 rounded-lg lg:hidden">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <div class="w-8 h-8 bg-egg-400 rounded-lg flex items-center justify-center text-white font-bold text-sm">🥚</div>
+            <div>
+                <h1 class="text-lg font-semibold text-gray-800">Inteligencia de Mercado</h1>
+                <p class="text-xs text-gray-500">Datos PROFECO + SNIIM + tus reportes</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <button onclick="newConversation()" class="text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-medium">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                Nueva consulta
+            </button>
+            <span id="status-badge" class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">Cargando...</span>
+            <a href="/" class="text-sm text-brand-600 hover:text-brand-700 font-medium">Dashboard</a>
+        </div>
+    </header>
+
+    <div class="chat-container flex">
+        <!-- Left Sidebar: Documents & History -->
+        <aside id="sidebar" class="sidebar w-72 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
+            <div class="flex border-b border-gray-200">
+                <button onclick="showSidebarTab('docs')" id="tab-docs" class="flex-1 py-2.5 text-sm text-center tab-active">Reportes</button>
+                <button onclick="showSidebarTab('history')" id="tab-history" class="flex-1 py-2.5 text-sm text-center text-gray-500 hover:text-gray-700">Historial</button>
+            </div>
+
+            <!-- Documents Panel -->
+            <div id="panel-docs" class="flex-1 overflow-y-auto">
+                <!-- Upload Zone -->
+                <div class="px-3 pt-3">
+                    <div id="upload-zone" class="upload-zone"
+                         onclick="document.getElementById('file-input').click()"
+                         ondragover="event.preventDefault(); this.classList.add('drag-over')"
+                         ondragleave="this.classList.remove('drag-over')"
+                         ondrop="event.preventDefault(); this.classList.remove('drag-over'); handleFileDrop(event)">
+                        <svg class="w-6 h-6 text-gray-400 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                        <p class="text-xs text-gray-500 font-medium">Sube tus reportes</p>
+                        <p class="text-xs text-gray-400 mt-0.5">PDF, Word, PowerPoint</p>
+                    </div>
+                    <input type="file" id="file-input" class="hidden" accept=".pdf,.docx,.pptx" onchange="handleFileSelect(event)">
+                    <div id="upload-progress" class="hidden mt-2 text-xs text-gray-500 text-center"></div>
+                </div>
+
+                <div class="px-3 pt-3 pb-1 flex items-center justify-between">
+                    <p class="text-xs text-gray-400 uppercase tracking-wide font-semibold">Tus documentos</p>
+                    <button onclick="toggleAllSources()" id="select-all-btn" class="text-xs text-brand-600 hover:text-brand-700 hidden">Seleccionar todo</button>
+                </div>
+                <div id="doc-list" class="px-3 pb-3">
+                    <p class="text-sm text-gray-400 text-center py-3">Sin documentos — sube PDFs, Word o PowerPoint para consultar con IA</p>
+                </div>
+
+                <!-- Data sources info -->
+                <div class="px-3 pb-3 mt-auto">
+                    <div class="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                        <p class="text-xs font-semibold text-gray-600 mb-1.5">Datos integrados</p>
+                        <div class="space-y-1 text-xs text-gray-500">
+                            <div class="flex items-center gap-1.5">
+                                <span class="w-1.5 h-1.5 bg-green-400 rounded-full"></span>
+                                PROFECO — precios retail
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <span class="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
+                                SNIIM — precios mayoreo
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <span class="w-1.5 h-1.5 bg-purple-400 rounded-full"></span>
+                                Tus reportes subidos
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- History Panel -->
+            <div id="panel-history" class="flex-1 overflow-y-auto hidden">
+                <div id="history-list" class="p-3">
+                    <p class="text-sm text-gray-400 text-center py-4">Sin consultas previas</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="flex-1 flex flex-col min-w-0">
+            <div id="messages" class="messages-area flex-1 p-4 space-y-4">
+                <!-- Welcome screen -->
+                <div id="welcome-screen" class="flex justify-center py-6">
+                    <div class="max-w-3xl w-full">
+                        <div class="text-center mb-6">
+                            <div class="w-14 h-14 bg-egg-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                                <svg class="w-7 h-7 text-egg-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+                            </div>
+                            <h2 class="text-xl font-semibold text-gray-800 mb-1">Inteligencia de Mercado del Huevo</h2>
+                            <p id="briefing-subtitle" class="text-sm text-gray-500">Cargando datos disponibles...</p>
+                        </div>
+                        <div id="briefing-stats" class="flex flex-wrap justify-center gap-3 mb-5 text-xs text-gray-500"></div>
+                        <div id="briefing-categories" class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4"></div>
+                        <p class="text-xs text-gray-400 text-center">Selecciona una categoria o escribe tu propia pregunta abajo</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="border-t border-gray-200 bg-white p-4">
+                <div class="max-w-3xl mx-auto flex gap-2">
+                    <div class="flex-1 relative">
+                        <textarea id="query-input"
+                            class="w-full border border-gray-300 rounded-xl px-4 py-3 pr-12 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-egg-400 focus:border-transparent"
+                            placeholder="Pregunta sobre precios, marcas, estados, mayoreo, o tus reportes..."
+                            rows="1"
+                            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendQuery()}"
+                            oninput="autoResize(this)"></textarea>
+                    </div>
+                    <button onclick="sendQuery()" id="send-btn"
+                        class="bg-egg-500 hover:bg-egg-600 text-white rounded-xl px-4 py-3 font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                        Enviar
+                    </button>
+                </div>
+                <p class="text-xs text-gray-400 text-center mt-2">Analisis con datos PROFECO (retail) + SNIIM (mayoreo) + tus documentos — las respuestas pueden contener errores.</p>
+            </div>
+        </main>
+    </div>
+
+<script>
+// State
+let conversationId = null;
+let isLoading = false;
+let excludedDocIds = new Set();
+let answerTexts = {};  // queryId -> raw text for copy
+
+// ---- Init ----
+document.addEventListener('DOMContentLoaded', async () => {
+    await Promise.all([loadDocuments(), loadHistory(), loadStatus(), loadBriefing()]);
+});
+
+// ---- API Calls ----
+async function loadStatus() {
+    try {
+        const res = await fetch('/api/rag/status');
+        const json = await res.json();
+        const d = json.data;
+        const badge = document.getElementById('status-badge');
+        if (!d.api_configured) {
+            badge.textContent = 'API no configurada';
+            badge.className = 'text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full';
+        } else {
+            const parts = [];
+            if (d.document_count > 0) parts.push(`${d.document_count} docs`);
+            parts.push(`${d.total_queries} consultas`);
+            badge.textContent = parts.join(' | ');
+            badge.className = 'text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full';
+        }
+    } catch (e) {
+        console.error('Status error:', e);
+    }
+}
+
+async function loadDocuments() {
+    try {
+        const res = await fetch('/api/rag/documents');
+        const json = await res.json();
+        renderDocList(json.data || []);
+    } catch (e) {
+        console.error('Load docs error:', e);
+    }
+}
+
+async function loadHistory() {
+    try {
+        const res = await fetch('/api/rag/history?limit=30');
+        const json = await res.json();
+        renderHistory(json.data || []);
+    } catch (e) {
+        console.error('Load history error:', e);
+    }
+}
+
+async function loadBriefing() {
+    try {
+        const res = await fetch('/api/rag/briefing');
+        const json = await res.json();
+        if (!json.success || !json.data) return;
+
+        const { summary, categories } = json.data;
+
+        const subtitle = document.getElementById('briefing-subtitle');
+        if (summary.total_observations) {
+            subtitle.textContent = `${summary.total_observations.toLocaleString()} precios retail + ${(summary.wholesale_count || 0).toLocaleString()} precios mayoreo | ${summary.state_count || 0} estados | ${summary.date_range}`;
+        }
+
+        const statsBar = document.getElementById('briefing-stats');
+        if (summary.price_stats) {
+            statsBar.innerHTML = `
+                <div class="bg-green-50 px-3 py-1.5 rounded-full"><span class="font-semibold text-green-700">Min $${summary.price_stats.min}</span></div>
+                <div class="bg-egg-50 px-3 py-1.5 rounded-full"><span class="font-semibold text-egg-700">Prom $${summary.price_stats.avg}</span></div>
+                <div class="bg-red-50 px-3 py-1.5 rounded-full"><span class="font-semibold text-red-700">Max $${summary.price_stats.max}</span></div>
+                <div class="bg-blue-50 px-3 py-1.5 rounded-full"><span class="font-semibold text-blue-700">${summary.chain_count} cadenas</span></div>
+                <div class="bg-indigo-50 px-3 py-1.5 rounded-full"><span class="font-semibold text-indigo-700">${summary.state_count || 0} estados</span></div>
+                <div class="bg-purple-50 px-3 py-1.5 rounded-full"><span class="font-semibold text-purple-700">${summary.wholesale_markets || 0} mercados mayoreo</span></div>
+            `;
+        }
+
+        const container = document.getElementById('briefing-categories');
+        const icons = {
+            chart: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>',
+            tag: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>',
+            map: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>',
+            store: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z"/></svg>',
+            sparkle: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>',
+            doc: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>',
+        };
+        container.innerHTML = categories.map(cat => {
+            return `
+                <div class="category-card border border-gray-200 rounded-xl p-3 bg-white"
+                     onclick="askSample('${cat.sample.replace(/'/g, "\\'")}')">
+                    <div class="flex items-center gap-2 mb-1.5">
+                        <div class="text-egg-600">${icons[cat.icon] || icons.chart}</div>
+                        <span class="text-sm font-semibold text-gray-800">${cat.title}</span>
+                    </div>
+                    <p class="text-xs text-gray-500 leading-relaxed">${cat.description}</p>
+                </div>`;
+        }).join('');
+
+    } catch (e) {
+        console.error('Briefing error:', e);
+    }
+}
+
+async function sendQuery() {
+    const input = document.getElementById('query-input');
+    const question = input.value.trim();
+    if (!question || isLoading) return;
+
+    isLoading = true;
+    document.getElementById('send-btn').disabled = true;
+    input.value = '';
+    autoResize(input);
+
+    const welcome = document.getElementById('welcome-screen');
+    if (welcome) welcome.remove();
+
+    addMessage('user', question);
+    addTypingIndicator();
+
+    try {
+        const body = { question, conversation_id: conversationId };
+        if (excludedDocIds.size > 0) {
+            body.exclude_doc_ids = Array.from(excludedDocIds);
+        }
+        const res = await fetch('/api/rag/query', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        const json = await res.json();
+        removeTypingIndicator();
+
+        if (json.success) {
+            conversationId = json.data.conversation_id;
+            addMessage('assistant', json.data.answer, json.data.sources, json.data.suggestions, json.data.query_id);
+            loadHistory();
+        } else {
+            addMessage('assistant', 'Error: ' + (json.detail || 'No se pudo procesar la consulta.'));
+        }
+    } catch (e) {
+        removeTypingIndicator();
+        addMessage('assistant', 'Error de conexion. Verifica que el servidor este activo.');
+    }
+
+    isLoading = false;
+    document.getElementById('send-btn').disabled = false;
+    input.focus();
+}
+
+// ---- File Upload ----
+async function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (file) await uploadFile(file);
+    event.target.value = '';
+}
+
+async function handleFileDrop(event) {
+    const file = event.dataTransfer.files[0];
+    if (file) await uploadFile(file);
+}
+
+async function uploadFile(file) {
+    const zone = document.getElementById('upload-zone');
+    const progress = document.getElementById('upload-progress');
+    zone.classList.add('uploading');
+    progress.classList.remove('hidden');
+    progress.textContent = `Subiendo ${file.name}...`;
+
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const res = await fetch('/api/rag/upload', { method: 'POST', body: formData });
+        const json = await res.json();
+
+        if (json.success) {
+            progress.innerHTML = `<span class="text-green-600">✓ ${file.name} — ${json.data.page_count} paginas, ${json.data.chunk_count} fragmentos</span>`;
+            await loadDocuments();
+            await loadStatus();
+        } else {
+            progress.innerHTML = `<span class="text-red-600">Error: ${json.detail || 'Fallo la subida'}</span>`;
+        }
+    } catch (e) {
+        progress.innerHTML = `<span class="text-red-600">Error de conexion</span>`;
+    }
+
+    zone.classList.remove('uploading');
+    setTimeout(() => { progress.classList.add('hidden'); }, 5000);
+}
+
+// ---- Rendering ----
+function addMessage(role, content, sources, suggestions, queryId) {
+    const container = document.getElementById('messages');
+    const wrapper = document.createElement('div');
+    wrapper.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+
+    const col = document.createElement('div');
+    col.className = role === 'user' ? '' : 'max-w-[85%]';
+
+    const bubble = document.createElement('div');
+    bubble.className = `message-bubble rounded-2xl px-4 py-3 text-sm ${
+        role === 'user'
+            ? 'bg-egg-500 text-white rounded-br-md'
+            : 'bg-white border border-gray-200 text-gray-800 rounded-bl-md shadow-sm'
+    }`;
+
+    // Render markdown-like formatting with numbered citation badges
+    let html = escapeHtml(content)
+        .replace(/\[(\d+)\]/g, (match, num) => {
+            return `<span class="citation-badge" data-cite="${num}" onclick="scrollToCitation(${num})" title="Ver fuente ${num}">${num}</span>`;
+        })
+        .replace(/\[Source: ([^\]]+)\]/g, '<span class="text-xs text-brand-600 font-medium cursor-pointer hover:underline" title="Ver fuente">[$1]</span>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n/g, '<br>');
+    bubble.innerHTML = html;
+    col.appendChild(bubble);
+
+    // Action bar for assistant messages
+    if (role === 'assistant' && queryId) {
+        answerTexts[queryId] = content;
+        const actionBar = document.createElement('div');
+        actionBar.className = 'flex items-center gap-1 mt-1.5 ml-1';
+        actionBar.innerHTML = `
+            <button onclick="copyAnswer('${queryId}')" class="action-btn text-gray-400 hover:text-gray-600 p-1.5 rounded hover:bg-gray-100" title="Copiar respuesta">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+            </button>
+            <button onclick="sendFeedback(this, '${queryId}', 'up')" class="action-btn feedback-btn text-gray-400 hover:text-green-600 p-1.5 rounded hover:bg-gray-100" title="Buena respuesta">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905a3.61 3.61 0 01-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"/></svg>
+            </button>
+            <button onclick="sendFeedback(this, '${queryId}', 'down')" class="action-btn feedback-btn text-gray-400 hover:text-red-600 p-1.5 rounded hover:bg-gray-100" title="Mala respuesta">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018c.163 0 .326.02.485.06L17 4m-7 10v2a3.5 3.5 0 003.5 3.5h.5a2 2 0 002-2v-.5c0-.663.186-1.312.538-1.873L17 13V4m-7 10h2m5-6h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5"/></svg>
+            </button>
+        `;
+        col.appendChild(actionBar);
+    }
+
+    wrapper.appendChild(col);
+    container.appendChild(wrapper);
+
+    // Suggestion chips
+    if (suggestions && suggestions.length > 0) {
+        const oldSuggestions = document.getElementById('suggestion-chips');
+        if (oldSuggestions) oldSuggestions.remove();
+
+        const sugDiv = document.createElement('div');
+        sugDiv.id = 'suggestion-chips';
+        sugDiv.className = 'flex justify-start';
+        sugDiv.innerHTML = `
+            <div class="message-bubble ml-0 flex flex-wrap gap-2">
+                ${suggestions.map(s => `
+                    <button onclick="askSuggestion(this, '${s.replace(/'/g, "\\'")}')"
+                        class="suggestion-chip text-xs border border-gray-300 text-gray-600 px-3 py-1.5 rounded-full hover:bg-egg-50 hover:border-egg-400 hover:text-egg-700 text-left">
+                        ${escapeHtml(s)}
+                    </button>
+                `).join('')}
+            </div>`;
+        container.appendChild(sugDiv);
+    }
+
+    // Source cards with numbered badges (deduplicated)
+    if (sources && sources.length > 0) {
+        const seen = new Set();
+        const uniqueSources = [];
+        let idx = 0;
+        sources.forEach(s => {
+            const key = `${s.document_id}_${s.page_number}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                idx++;
+                uniqueSources.push({...s, citationNumber: idx});
+            }
+        });
+
+        const sourcesDiv = document.createElement('div');
+        sourcesDiv.className = 'flex justify-start';
+        sourcesDiv.innerHTML = `
+            <div class="message-bubble ml-0">
+                <button onclick="this.nextElementSibling.classList.toggle('hidden')" class="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1 mb-2">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    ${uniqueSources.length} fuente${uniqueSources.length > 1 ? 's' : ''} citada${uniqueSources.length > 1 ? 's' : ''}
+                </button>
+                <div class="space-y-2">
+                    ${uniqueSources.map(s => {
+                        const url = '/api/rag/documents/' + s.document_id + '/file#page=' + s.page_number;
+                        return `
+                        <a href="${url}" target="_blank" rel="noopener" id="source-card-${s.citationNumber}" class="source-card bg-gray-50 border border-gray-200 rounded-lg p-3 block no-underline">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="flex items-center gap-2 flex-1 min-w-0">
+                                    <span class="citation-badge" style="position:static; vertical-align:middle; flex-shrink:0;">${s.citationNumber}</span>
+                                    <div class="min-w-0">
+                                        <p class="text-xs font-semibold text-gray-700 truncate">${escapeHtml(s.filename)}</p>
+                                        <p class="text-xs text-brand-600">Pagina ${s.page_number} | ${Math.round(s.relevance_score * 100)}%</p>
+                                    </div>
+                                </div>
+                                <svg class="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1.5 line-clamp-2">${escapeHtml(s.chunk_text.substring(0, 150))}...</p>
+                        </a>`;
+                    }).join('')}
+                </div>
+            </div>`;
+        container.appendChild(sourcesDiv);
+    }
+
+    container.scrollTop = container.scrollHeight;
+}
+
+function scrollToCitation(num) {
+    const card = document.getElementById(`source-card-${num}`);
+    if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.classList.add('ring-2', 'ring-egg-400');
+        setTimeout(() => card.classList.remove('ring-2', 'ring-egg-400'), 2000);
+    }
+}
+
+function addTypingIndicator() {
+    const container = document.getElementById('messages');
+    const div = document.createElement('div');
+    div.id = 'typing-indicator';
+    div.className = 'flex justify-start';
+    div.innerHTML = `<div class="message-bubble bg-white border border-gray-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">
+        <div class="typing-indicator flex gap-1"><span class="w-2 h-2 bg-gray-400 rounded-full"></span><span class="w-2 h-2 bg-gray-400 rounded-full"></span><span class="w-2 h-2 bg-gray-400 rounded-full"></span></div>
+    </div>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function removeTypingIndicator() {
+    const el = document.getElementById('typing-indicator');
+    if (el) el.remove();
+}
+
+function renderDocList(docs) {
+    const container = document.getElementById('doc-list');
+    const selectAllBtn = document.getElementById('select-all-btn');
+    if (!docs.length) {
+        container.innerHTML = '<p class="text-sm text-gray-400 text-center py-3">Sin documentos — sube PDFs, Word o PowerPoint para consultar con IA</p>';
+        selectAllBtn.classList.add('hidden');
+        return;
+    }
+    selectAllBtn.classList.remove('hidden');
+    container.innerHTML = docs.map(d => {
+        const isChecked = !excludedDocIds.has(d.id);
+        return `
+        <div class="flex items-start gap-2 p-2 rounded-lg hover:bg-gray-50 group">
+            <input type="checkbox" ${isChecked ? 'checked' : ''}
+                class="mt-2 w-4 h-4 accent-egg-500 flex-shrink-0 cursor-pointer"
+                onchange="toggleDocSource('${d.id}', this.checked)"
+                title="Incluir en consultas">
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                d.format === 'pdf' ? 'bg-red-50 text-red-500' :
+                d.format === 'docx' ? 'bg-blue-50 text-blue-500' : 'bg-orange-50 text-orange-500'
+            }">
+                <span class="text-xs font-bold uppercase">${d.format}</span>
+            </div>
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-gray-700 truncate cursor-pointer hover:text-brand-600"
+                   onclick="openSource('${d.id}')" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</p>
+                <p class="text-xs text-gray-400">${d.page_count} pags | ${d.chunk_count} fragmentos | ${formatBytes(d.size_bytes)}</p>
+            </div>
+            <button onclick="deleteDocument('${d.id}', '${escapeHtml(d.filename)}')"
+                class="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 rounded transition-opacity" title="Eliminar">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </button>
+        </div>`;
+    }).join('');
+}
+
+function renderHistory(items) {
+    const container = document.getElementById('history-list');
+    if (!items.length) {
+        container.innerHTML = '<p class="text-sm text-gray-400 text-center py-4">Sin consultas previas</p>';
+        return;
+    }
+    container.innerHTML = items.map(h => `
+        <div class="p-2 rounded-lg hover:bg-gray-50 cursor-pointer mb-1" onclick="showQueryDetail('${h.query_id}')">
+            <p class="text-sm text-gray-700 truncate">${escapeHtml(h.question)}</p>
+            <p class="text-xs text-gray-400 mt-0.5">${formatDate(h.created_at)} | ${h.source_count} fuentes</p>
+        </div>
+    `).join('');
+}
+
+// ---- Actions ----
+function openSource(docId, pageNumber) {
+    let url = `/api/rag/documents/${docId}/file`;
+    if (pageNumber) url += `#page=${pageNumber}`;
+    window.open(url, '_blank');
+}
+
+async function deleteDocument(docId, filename) {
+    if (!confirm(`Eliminar "${filename}" de la base de conocimiento?`)) return;
+    try {
+        const res = await fetch(`/api/rag/documents/${docId}`, { method: 'DELETE' });
+        if (res.ok) {
+            excludedDocIds.delete(docId);
+            await loadDocuments();
+            await loadStatus();
+        }
+    } catch (e) {
+        console.error('Delete error:', e);
+    }
+}
+
+async function copyAnswer(queryId) {
+    const text = answerTexts[queryId];
+    if (!text) return;
+    try {
+        await navigator.clipboard.writeText(text);
+    } catch(e) { console.error('Copy failed:', e); }
+}
+
+async function sendFeedback(btn, queryId, rating) {
+    try {
+        const res = await fetch('/api/rag/feedback', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ query_id: queryId, rating })
+        });
+        if (res.ok) {
+            const parent = btn.parentElement;
+            parent.querySelectorAll('.feedback-btn').forEach(b => {
+                b.classList.add('opacity-30', 'pointer-events-none');
+            });
+            btn.classList.remove('opacity-30', 'pointer-events-none');
+            btn.classList.add(rating === 'up' ? 'text-green-500' : 'text-red-500');
+        }
+    } catch(e) { console.error('Feedback error:', e); }
+}
+
+function toggleDocSource(docId, isChecked) {
+    if (isChecked) {
+        excludedDocIds.delete(docId);
+    } else {
+        excludedDocIds.add(docId);
+    }
+}
+
+function toggleAllSources() {
+    const checkboxes = document.querySelectorAll('#doc-list input[type="checkbox"]');
+    const allChecked = excludedDocIds.size === 0;
+    checkboxes.forEach(cb => {
+        cb.checked = !allChecked;
+        const docId = cb.getAttribute('onchange').match(/'([^']+)'/)[1];
+        if (allChecked) {
+            excludedDocIds.add(docId);
+        } else {
+            excludedDocIds.delete(docId);
+        }
+    });
+    document.getElementById('select-all-btn').textContent = allChecked ? 'Seleccionar todo' : 'Deseleccionar todo';
+}
+
+async function showQueryDetail(queryId) {
+    try {
+        const res = await fetch(`/api/rag/history/${queryId}`);
+        const json = await res.json();
+        if (json.success) {
+            const d = json.data;
+            const welcome = document.getElementById('welcome-screen');
+            if (welcome) welcome.remove();
+            addMessage('user', d.question);
+            addMessage('assistant', d.answer, d.sources);
+        }
+    } catch (e) {
+        console.error('Query detail error:', e);
+    }
+}
+
+function newConversation() {
+    conversationId = null;
+    const container = document.getElementById('messages');
+    container.innerHTML = `
+        <div id="welcome-screen" class="flex justify-center py-6">
+            <div class="max-w-3xl w-full">
+                <div class="text-center mb-6">
+                    <div class="w-14 h-14 bg-egg-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                        <svg class="w-7 h-7 text-egg-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+                    </div>
+                    <h2 class="text-xl font-semibold text-gray-800 mb-1">Inteligencia de Mercado del Huevo</h2>
+                    <p id="briefing-subtitle" class="text-sm text-gray-500">Cargando datos disponibles...</p>
+                </div>
+                <div id="briefing-stats" class="flex flex-wrap justify-center gap-3 mb-5 text-xs text-gray-500"></div>
+                <div id="briefing-categories" class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4"></div>
+                <p class="text-xs text-gray-400 text-center">Selecciona una categoria o escribe tu propia pregunta abajo</p>
+            </div>
+        </div>`;
+    loadBriefing();
+}
+
+function askSample(question) {
+    document.getElementById('query-input').value = question;
+    sendQuery();
+}
+
+function askSuggestion(btn, question) {
+    const chips = document.getElementById('suggestion-chips');
+    if (chips) chips.remove();
+    document.getElementById('query-input').value = question;
+    sendQuery();
+}
+
+function showSidebarTab(tab) {
+    document.getElementById('panel-docs').classList.toggle('hidden', tab !== 'docs');
+    document.getElementById('panel-history').classList.toggle('hidden', tab !== 'history');
+    document.getElementById('tab-docs').classList.toggle('tab-active', tab === 'docs');
+    document.getElementById('tab-history').classList.toggle('tab-active', tab === 'history');
+    document.getElementById('tab-docs').classList.toggle('text-gray-500', tab !== 'docs');
+    document.getElementById('tab-history').classList.toggle('text-gray-500', tab !== 'history');
+    if (tab === 'history') loadHistory();
+}
+
+function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('sidebar-collapsed');
+}
+
+// ---- Utilities ----
+function autoResize(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function formatBytes(bytes) {
+    if (!bytes) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function formatDate(dateStr) {
+    try {
+        const d = new Date(dateStr);
+        return d.toLocaleDateString('es-MX', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch {
+        return dateStr;
+    }
+}
+</script>
+</body>
+</html>
